@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import random
+import sys
 import time
 from pathlib import Path
 
@@ -318,9 +319,9 @@ def main() -> None:
                 max_events=args.max_events,
             )
             if args.max_events > 0:
-                print(f"Stream completed after {emitted} events")
+                print(f"Stream completed after {emitted} events", file=sys.stderr)
         except KeyboardInterrupt:
-            print("\nStream stopped")
+            print("\nStream stopped", file=sys.stderr)
         return
 
     rows = list(
