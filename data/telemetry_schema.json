@@ -1,0 +1,61 @@
+{
+  "event_name": "flight_telemetry",
+  "version": "1.0",
+  "description": "Synthetic aircraft telemetry event emitted by FlightEdge generator",
+
+  "fields": [
+    {
+      "name": "timestamp_s",
+      "type": "float",
+      "unit": "seconds",
+      "description": "Simulation timestamp"
+    },
+    {
+      "name": "phase",
+      "type": "string",
+      "description": "Flight phase (startup, takeoff, climb, cruise, descent, landing)"
+    },
+    {
+      "name": "altitude_ft",
+      "type": "float",
+      "unit": "feet",
+      "range": [0, 42000],
+      "description": "Aircraft altitude"
+    },
+    {
+      "name": "airspeed_kts",
+      "type": "float",
+      "unit": "knots",
+      "range": [0, 420],
+      "description": "Aircraft airspeed"
+    },
+    {
+      "name": "engine_rpm",
+      "type": "float",
+      "unit": "rpm",
+      "range": [600, 3000],
+      "description": "Engine revolutions per minute"
+    },
+    {
+      "name": "engine_temp_c",
+      "type": "float",
+      "unit": "celsius",
+      "range": [20, 260],
+      "description": "Engine temperature"
+    },
+    {
+      "name": "vibration_g",
+      "type": "float",
+      "unit": "g",
+      "range": [0, 2],
+      "description": "Engine vibration level"
+    },
+    {
+      "name": "pitch_deg",
+      "type": "float",
+      "unit": "degrees",
+      "range": [-15, 15],
+      "description": "Aircraft pitch angle"
+    }
+  ]
+}
