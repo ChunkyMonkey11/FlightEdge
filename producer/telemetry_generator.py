@@ -17,6 +17,7 @@ FIELDNAMES = [
     "engine_rpm",
     "engine_temp_c",
     "vibration_g",
+    "pitch_deg",
 ]
 
 
@@ -31,7 +32,8 @@ def phase_bounds():
         ("takeoff", 0.10, 0.20),
         ("climb", 0.20, 0.45),
         ("cruise", 0.45, 0.75),
-        ("descent", 0.75, 1.01),
+        ("descent", 0.75, 0.92),
+        ("landing", 0.92, 1.01),
     ]
 
 
@@ -39,7 +41,7 @@ def get_phase(progress: float) -> str:
     for name, start, end in phase_bounds():
         if start <= progress < end:
             return name
-    return "descent"
+    return "landing"
 
 
 def phase_progress(progress: float, phase: str) -> float:
@@ -80,12 +82,19 @@ def get_targets(phase: str, p: float) -> dict:
             "pitch_deg": 1.0,
             "vertical_rate_fps": 0.2,
         }
-    # descent
+    if phase == "descent":
+        return {
+            "airspeed_kts": 220 - 70 * p,
+            "engine_rpm": 1900 - 260 * p,
+            "pitch_deg": -2.0 - 2.5 * p,
+            "vertical_rate_fps": -22.0 - 14.0 * p,
+        }
+    # landing: distinct from descent with stronger deceleration and flare-like pitch recovery.
     return {
-        "airspeed_kts": 220 - 60 * p,
-        "engine_rpm": 1900 - 250 * p,
-        "pitch_deg": -2.0 - 2.5 * p,
-        "vertical_rate_fps": -18.0 - 12.0 * p,
+        "airspeed_kts": 150 - 115 * p,
+        "engine_rpm": 1600 - 700 * p,
+        "pitch_deg": -3.5 + 4.5 * p,
+        "vertical_rate_fps": -70.0 + 56.0 * p,
     }
 
 
@@ -197,6 +206,7 @@ class TelemetrySimulator:
             "engine_rpm": round(self.state["engine_rpm"], 2),
             "engine_temp_c": round(self.state["engine_temp_c"], 2),
             "vibration_g": round(self.state["vibration_g"], 4),
+            "pitch_deg": round(self.state["pitch_deg"], 2),
         }
         self.i += 1
         return row
