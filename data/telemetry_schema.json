@@ -1,6 +1,6 @@
 {
   "event_name": "flight_telemetry",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Synthetic aircraft telemetry event emitted by FlightEdge generator",
 
   "fields": [
@@ -56,6 +56,17 @@
       "unit": "degrees",
       "range": [-15, 15],
       "description": "Aircraft pitch angle"
+    },
+    {
+      "name": "is_anomaly",
+      "type": "boolean",
+      "description": "Whether this event belongs to an active anomaly window"
+    },
+    {
+      "name": "anomaly_type",
+      "type": "string",
+      "allowed_values": ["none", "vibration_spike", "temp_drift", "temp_spike", "altitude_drop"],
+      "description": "Active anomaly type for this event, or \"none\""
     }
   ]
 }

@@ -133,3 +133,63 @@ flightedge/
     └── roadmap.md
 
 
+---
+
+# Telemetry Generator Examples
+
+Generate normal telemetry (no anomalies):
+
+```bash
+python3 producer/telemetry_generator.py \
+  --rows 240 \
+  --seed 42 \
+  --anomaly none \
+  --format csv \
+  --output data/synthetic_runs/telemetry_normal.csv
+```
+
+Generate a reproducible temp spike run:
+
+```bash
+python3 producer/telemetry_generator.py \
+  --rows 240 \
+  --seed 42 \
+  --anomaly temp_spike \
+  --anomaly-probability 1.0 \
+  --format jsonl \
+  --output data/synthetic_runs/telemetry_temp_spike.jsonl
+```
+
+Generate altitude drop anomalies during climb/cruise:
+
+```bash
+python3 producer/telemetry_generator.py \
+  --rows 240 \
+  --seed 42 \
+  --anomaly altitude_drop \
+  --anomaly-probability 1.0 \
+  --format csv \
+  --output data/synthetic_runs/telemetry_altitude_drop.csv
+```
+
+Notes:
+- Set `--anomaly-probability 0.0` for fully normal runs even when anomaly type is set.
+- Same `--seed` + same args produces identical anomaly timing and shape.
+
+---
+
+# Anomaly Validation Checks
+
+Run the built-in validation suite:
+
+```bash
+python3 producer/validate_anomalies.py --rows 240 --seed 42
+```
+
+This checks:
+- temp spike shape (sharp increase with decay)
+- altitude drop behavior (unexpected descent in climb/cruise)
+- realism bounds for all key sensors
+- anomaly metadata contract (`is_anomaly`, `anomaly_type`)
+- anomaly probability frequency behavior
+

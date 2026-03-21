@@ -3,6 +3,7 @@
 import argparse
 import csv
 import json
+import math
 import random
 import sys
 import time
@@ -18,6 +19,8 @@ FIELDNAMES = [
     "engine_temp_c",
     "vibration_g",
     "pitch_deg",
+    "is_anomaly",
+    "anomaly_type",
 ]
 
 
@@ -109,6 +112,28 @@ def choose_anomaly_window(num_rows: int, rng: random.Random):
     return (start, end)
 
 
+def choose_altitude_drop_window(num_rows: int, rng: random.Random):
+    # Restrict altitude-drop anomalies to climb/cruise portions.
+    eligible = []
+    for i in range(num_rows):
+        progress = i / max(1, num_rows - 1)
+        if get_phase(progress) in ("climb", "cruise"):
+            eligible.append(i)
+
+    if not eligible:
+        return (0, 0)
+
+    low = eligible[0]
+    high = eligible[-1] + 1
+    max_width = min(18, high - low)
+    if max_width < 6:
+        return (0, 0)
+    width = rng.randint(6, max_width)
+    start = rng.randint(low, high - width)
+    end = start + width
+    return (start, end)
+
+
 def initial_state() -> dict:
     # Mutable state that evolves over time.
     return {
@@ -122,22 +147,135 @@ def initial_state() -> dict:
 
 
 class TelemetrySimulator:
-    def __init__(self, dt: float, seed: int, anomaly: str, cycle_rows: int):
+    def __init__(
+        self,
+        dt: float,
+        seed: int,
+        anomaly: str,
+        cycle_rows: int,
+        anomaly_probability: float,
+    ):
         self.dt = dt
         self.anomaly = anomaly
         self.cycle_rows = cycle_rows
+        self.anomaly_probability = anomaly_probability
         self.rng = random.Random(seed)
         self.state = initial_state()
         self.i = 0
         self.temp_drift_offset = 0.0
-        self.anomaly_start, self.anomaly_end = choose_anomaly_window(cycle_rows, self.rng)
+        self.anomaly_window = self._sample_cycle_anomaly()
+
+    def _sample_cycle_anomaly(self):
+        window = {
+            "active": False,
+            "type": "none",
+            "start": 0,
+            "end": 0,
+            "duration": 0,
+            "params": {},
+        }
+
+        if self.anomaly == "none":
+            return window
+
+        if self.rng.random() >= self.anomaly_probability:
+            return window
+
+        if self.anomaly == "altitude_drop":
+            start, end = choose_altitude_drop_window(self.cycle_rows, self.rng)
+        else:
+            start, end = choose_anomaly_window(self.cycle_rows, self.rng)
+
+        duration = max(0, end - start)
+        if duration == 0:
+            return window
+
+        params = {}
+        if self.anomaly == "vibration_spike":
+            params = {
+                "max_extra": self.rng.uniform(0.14, 0.24),
+                "osc_amp": self.rng.uniform(0.08, 0.18),
+                "osc_freq": self.rng.uniform(2.0, 4.5),
+                "osc_phase": self.rng.uniform(0.0, math.tau),
+                "ramp_frac": self.rng.uniform(0.18, 0.30),
+                "decay_frac": self.rng.uniform(0.22, 0.36),
+            }
+        elif self.anomaly == "temp_drift":
+            params = {
+                "slope_per_step": self.rng.uniform(0.35, 0.75),
+                "max_offset": self.rng.uniform(18.0, 42.0),
+            }
+        elif self.anomaly == "temp_spike":
+            params = {
+                "spike_mag": self.rng.uniform(24.0, 48.0),
+                "decay_rate": self.rng.uniform(0.84, 0.93),
+            }
+        elif self.anomaly == "altitude_drop":
+            params = {
+                "drop_fps": self.rng.uniform(35.0, 80.0),
+                "ramp_frac": self.rng.uniform(0.10, 0.22),
+                "decay_frac": self.rng.uniform(0.18, 0.34),
+            }
+
+        window.update(
+            {
+                "active": True,
+                "type": self.anomaly,
+                "start": start,
+                "end": end,
+                "duration": duration,
+                "params": params,
+            }
+        )
+        return window
+
+    def _window_progress(self, cycle_i: int) -> tuple[float, int]:
+        start = self.anomaly_window["start"]
+        duration = max(1, self.anomaly_window["duration"])
+        step_idx = max(0, cycle_i - start)
+        step_idx = min(step_idx, duration - 1)
+        t = step_idx / max(1, duration - 1)
+        return t, step_idx
+
+    def _envelope(self, t: float, ramp_frac: float, decay_frac: float) -> float:
+        ramp = max(0.05, min(0.45, ramp_frac))
+        decay = max(0.05, min(0.45, decay_frac))
+        if t < ramp:
+            return t / ramp
+        if t > 1.0 - decay:
+            return max(0.0, (1.0 - t) / decay)
+        return 1.0
+
+    def _apply_anomaly(self, cycle_i: int, phase: str) -> None:
+        anomaly_type = self.anomaly_window["type"]
+        params = self.anomaly_window["params"]
+        t, step_idx = self._window_progress(cycle_i)
+
+        if anomaly_type == "vibration_spike":
+            envelope = self._envelope(t, params["ramp_frac"], params["decay_frac"])
+            oscillation = 1.0 + params["osc_amp"] * math.sin(
+                math.tau * params["osc_freq"] * t + params["osc_phase"]
+            )
+            extra = max(0.0, params["max_extra"] * envelope * oscillation)
+            self.state["vibration_g"] += extra
+        elif anomaly_type == "temp_drift":
+            self.temp_drift_offset = min(
+                params["max_offset"],
+                self.temp_drift_offset + params["slope_per_step"],
+            )
+            self.state["engine_temp_c"] += self.temp_drift_offset
+        elif anomaly_type == "temp_spike":
+            boost = params["spike_mag"] * (params["decay_rate"] ** step_idx)
+            self.state["engine_temp_c"] += boost
+        elif anomaly_type == "altitude_drop":
+            if phase in ("climb", "cruise"):
+                envelope = self._envelope(t, params["ramp_frac"], params["decay_frac"])
+                self.state["altitude_ft"] -= params["drop_fps"] * envelope * self.dt
 
     def _start_new_cycle(self) -> None:
         self.state = initial_state()
         self.temp_drift_offset = 0.0
-        self.anomaly_start, self.anomaly_end = choose_anomaly_window(
-            self.cycle_rows, self.rng
-        )
+        self.anomaly_window = self._sample_cycle_anomaly()
 
     def next_event(self, timestamp_s: float) -> dict:
         cycle_i = self.i % self.cycle_rows
@@ -176,13 +314,13 @@ class TelemetrySimulator:
         vib_target = 0.03 + 0.00011 * self.state["engine_rpm"]
         self.state["vibration_g"] += 0.20 * (vib_target - self.state["vibration_g"])
 
-        # Optional anomaly injection.
-        if self.anomaly != "none" and self.anomaly_start <= cycle_i < self.anomaly_end:
-            if self.anomaly == "vibration_spike":
-                self.state["vibration_g"] += 0.18 + 0.05 * self.rng.random()
-            elif self.anomaly == "temp_drift":
-                self.temp_drift_offset += 0.6
-                self.state["engine_temp_c"] += self.temp_drift_offset
+        is_anomaly = (
+            self.anomaly_window["active"]
+            and self.anomaly_window["start"] <= cycle_i < self.anomaly_window["end"]
+        )
+        anomaly_type = self.anomaly_window["type"] if is_anomaly else "none"
+        if is_anomaly:
+            self._apply_anomaly(cycle_i, phase)
 
         # Small noise keeps data from being too perfect while staying smooth.
         self.state["altitude_ft"] += self.rng.gauss(0, 4.0)
@@ -207,13 +345,27 @@ class TelemetrySimulator:
             "engine_temp_c": round(self.state["engine_temp_c"], 2),
             "vibration_g": round(self.state["vibration_g"], 4),
             "pitch_deg": round(self.state["pitch_deg"], 2),
+            "is_anomaly": is_anomaly,
+            "anomaly_type": anomaly_type,
         }
         self.i += 1
         return row
 
 
-def generate_rows(num_rows: int, dt: float, seed: int, anomaly: str):
-    simulator = TelemetrySimulator(dt=dt, seed=seed, anomaly=anomaly, cycle_rows=num_rows)
+def generate_rows(
+    num_rows: int,
+    dt: float,
+    seed: int,
+    anomaly: str,
+    anomaly_probability: float,
+):
+    simulator = TelemetrySimulator(
+        dt=dt,
+        seed=seed,
+        anomaly=anomaly,
+        cycle_rows=num_rows,
+        anomaly_probability=anomaly_probability,
+    )
     for i in range(num_rows):
         yield simulator.next_event(timestamp_s=i * dt)
 
@@ -276,9 +428,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--anomaly",
-        choices=["none", "vibration_spike", "temp_drift"],
+        choices=["none", "vibration_spike", "temp_drift", "temp_spike", "altitude_drop"],
         default="none",
         help="Optional anomaly to inject.",
+    )
+    parser.add_argument(
+        "--anomaly-probability",
+        type=float,
+        default=1.0,
+        help="Probability that a cycle contains an anomaly window (0.0-1.0).",
     )
     parser.add_argument(
         "--format",
@@ -314,6 +472,8 @@ def main() -> None:
         raise ValueError("--event-interval-ms must be between 100 and 500")
     if args.max_events < 0:
         raise ValueError("--max-events must be >= 0")
+    if args.anomaly_probability < 0.0 or args.anomaly_probability > 1.0:
+        raise ValueError("--anomaly-probability must be between 0.0 and 1.0")
 
     if args.stream:
         simulator = TelemetrySimulator(
@@ -321,6 +481,7 @@ def main() -> None:
             seed=args.seed,
             anomaly=args.anomaly,
             cycle_rows=args.rows,
+            anomaly_probability=args.anomaly_probability,
         )
         try:
             emitted = stream_events(
@@ -340,6 +501,7 @@ def main() -> None:
             dt=args.dt,
             seed=args.seed,
             anomaly=args.anomaly,
+            anomaly_probability=args.anomaly_probability,
         )
     )
 
