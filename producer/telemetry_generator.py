@@ -9,8 +9,8 @@ import sys
 import time
 from pathlib import Path
 
-
 FIELDNAMES = [
+    "flight_id",
     "timestamp_s",
     "phase",
     "altitude_ft",
@@ -358,6 +358,7 @@ def generate_rows(
     seed: int,
     anomaly: str,
     anomaly_probability: float,
+    flight_id: str,
 ):
     simulator = TelemetrySimulator(
         dt=dt,
@@ -367,7 +368,9 @@ def generate_rows(
         anomaly_probability=anomaly_probability,
     )
     for i in range(num_rows):
-        yield simulator.next_event(timestamp_s=i * dt)
+        event = simulator.next_event(timestamp_s=i * dt)
+        event["flight_id"] = flight_id
+        yield event
 
 
 def write_csv(output_path: Path, rows):
@@ -385,17 +388,28 @@ def write_jsonl(output_path: Path, rows):
             f.write(json.dumps(row) + "\n")
 
 
-def stream_events(simulator: TelemetrySimulator, event_interval_ms: int, max_events: int) -> int:
+def stream_events(
+    simulator: TelemetrySimulator,
+    event_interval_ms: int,
+    max_events: int,
+    flight_id: str,
+    publish_fn=None,
+) -> list[dict]:
     emitted = 0
     interval_s = event_interval_ms / 1000.0
+    streamed_events = []
 
     while max_events <= 0 or emitted < max_events:
         event = simulator.next_event(timestamp_s=time.time())
+        event["flight_id"] = flight_id
         print(json.dumps(event), flush=True)
+        if publish_fn is not None:
+            publish_fn(event)
+        streamed_events.append(event)
         emitted += 1
         time.sleep(interval_s)
 
-    return emitted
+    return streamed_events
 
 
 def main() -> None:
@@ -450,6 +464,27 @@ def main() -> None:
         help="Emit events continuously to stdout instead of writing a file.",
     )
     parser.add_argument(
+        "--mode",
+        choices=["csv", "kafka", "both"],
+        default="csv",
+        help="Publish mode: csv file output, kafka stream, or both.",
+    )
+    parser.add_argument(
+        "--flight-id",
+        default="FLIGHT-001",
+        help="Flight identifier used as Kafka message key.",
+    )
+    parser.add_argument(
+        "--kafka-bootstrap-servers",
+        default="localhost:9092",
+        help="Kafka bootstrap servers (comma-separated).",
+    )
+    parser.add_argument(
+        "--kafka-topic",
+        default="flightedge",
+        help="Kafka topic name for telemetry events.",
+    )
+    parser.add_argument(
         "--event-interval-ms",
         type=int,
         default=200,
@@ -474,6 +509,60 @@ def main() -> None:
         raise ValueError("--max-events must be >= 0")
     if args.anomaly_probability < 0.0 or args.anomaly_probability > 1.0:
         raise ValueError("--anomaly-probability must be between 0.0 and 1.0")
+    if not args.flight_id.strip():
+        raise ValueError("--flight-id must not be empty")
+    if args.mode == "both" and args.max_events == 0:
+        raise ValueError("--mode both requires --max-events > 0 to complete file writing")
+
+    if args.mode in ("kafka", "both"):
+        try:
+            from producer.producer import KafkaTelemetryProducer
+        except ModuleNotFoundError:
+            # Supports direct execution: python producer/telemetry_generator.py
+            from producer import KafkaTelemetryProducer
+
+        simulator = TelemetrySimulator(
+            dt=args.dt,
+            seed=args.seed,
+            anomaly=args.anomaly,
+            cycle_rows=args.rows,
+            anomaly_probability=args.anomaly_probability,
+        )
+        rows_for_file = []
+        try:
+            with KafkaTelemetryProducer(
+                bootstrap_servers=args.kafka_bootstrap_servers,
+                topic=args.kafka_topic,
+            ) as kafka_producer:
+                rows_for_file = stream_events(
+                    simulator=simulator,
+                    event_interval_ms=args.event_interval_ms,
+                    max_events=args.max_events,
+                    flight_id=args.flight_id,
+                    publish_fn=lambda event: kafka_producer.send_event(
+                        flight_id=args.flight_id, event=event
+                    ),
+                )
+                if args.max_events > 0:
+                    print(
+                        f"Kafka stream completed after {len(rows_for_file)} events",
+                        file=sys.stderr,
+                    )
+                else:
+                    print("Kafka stream stopped", file=sys.stderr)
+        except KeyboardInterrupt:
+            print("\nKafka stream interrupted", file=sys.stderr)
+
+        if args.mode == "both" and rows_for_file:
+            if args.format == "csv":
+                write_csv(output_path=args.output, rows=rows_for_file)
+            else:
+                write_jsonl(output_path=args.output, rows=rows_for_file)
+            print(
+                f"Wrote {len(rows_for_file)} streamed rows to {args.output} ({args.format})"
+            )
+
+        return
 
     if args.stream:
         simulator = TelemetrySimulator(
@@ -484,13 +573,14 @@ def main() -> None:
             anomaly_probability=args.anomaly_probability,
         )
         try:
-            emitted = stream_events(
+            streamed = stream_events(
                 simulator=simulator,
                 event_interval_ms=args.event_interval_ms,
                 max_events=args.max_events,
+                flight_id=args.flight_id,
             )
             if args.max_events > 0:
-                print(f"Stream completed after {emitted} events", file=sys.stderr)
+                print(f"Stream completed after {len(streamed)} events", file=sys.stderr)
         except KeyboardInterrupt:
             print("\nStream stopped", file=sys.stderr)
         return
@@ -502,6 +592,7 @@ def main() -> None:
             seed=args.seed,
             anomaly=args.anomaly,
             anomaly_probability=args.anomaly_probability,
+            flight_id=args.flight_id,
         )
     )
 
