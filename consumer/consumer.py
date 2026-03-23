@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from kafka import KafkaConsumer
+from preprocess import preprocess_event
 
 
 def build_consumer(
@@ -66,10 +67,21 @@ def main() -> None:
     try:
         for message in consumer:
             consumed_at = datetime.now(timezone.utc).isoformat()
-            payload = json.dumps(message.value, sort_keys=True)
+            raw_payload = message.value
+            payload = preprocess_event(raw_payload)
+            if payload is None:
+                print(
+                    f"[{consumed_at}] key={message.key} "
+                    f"partition={message.partition} offset={message.offset} "
+                    "dropped=invalid_payload",
+                    flush=True,
+                )
+                continue
+
+            payload_json = json.dumps(payload, sort_keys=True)
             print(
                 f"[{consumed_at}] key={message.key} "
-                f"partition={message.partition} offset={message.offset} value={payload}",
+                f"partition={message.partition} offset={message.offset} value={payload_json}",
                 flush=True,
             )
     except KeyboardInterrupt:
