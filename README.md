@@ -1,111 +1,18 @@
 # FlightEdge
 
-A real-time edge telemetry anomaly detection pipeline designed to simulate machine learning systems running on constrained hardware such as NVIDIA Jetson or Thor.
+FlightEdge is an edge-ML sandbox for telemetry anomaly detection workflows.
 
-FlightEdge focuses on the engineering challenges that arise when models must operate locally on streaming data rather than in cloud environments.
-
----
-
-# Overview
-
-FlightEdge is a systems-focused machine learning project that simulates how real-time telemetry from aircraft sensors might be processed on edge hardware.
-
-Instead of training a model and stopping there, this project focuses on the full pipeline:
-
-- generating streaming telemetry
-- transporting events through a message broker
-- transforming telemetry into features
-- running anomaly detection in real time
-- benchmarking inference latency
-- experimenting with model optimization techniques such as quantization
-
-The system simulates aircraft telemetry data flowing through a streaming architecture and evaluates how efficiently an anomaly detection model can operate under conditions similar to embedded deployment.
-
-This project is intended to build intuition for real-world ML systems where:
-
-- compute resources are limited  
-- latency requirements are strict  
-- data arrives continuously rather than in batches  
+The repository currently focuses on model experimentation, inference benchmarking, and dashboard work.
 
 ---
 
-# Motivation
-
-Most machine learning tutorials stop at training a model inside a notebook.
-
-Real systems are harder.
-
-Production ML systems must solve problems like:
-
-- ingesting streaming data
-- managing real-time pipelines
-- performing inference under hardware constraints
-- monitoring system latency
-- optimizing models for deployment
-
-FlightEdge focuses on the **engineering layer around ML**, which is often the hardest part of building practical systems.
-
----
-
-# Project Goals
-
-FlightEdge aims to replicate a simplified version of real edge ML workflows.
-
-Core objectives:
-
-1. Generate simulated aircraft telemetry in real time  
-2. Stream telemetry through Kafka topics  
-3. Consume and preprocess telemetry streams  
-4. Convert raw telemetry into rolling feature windows  
-5. Run anomaly detection models on the stream  
-6. Surface anomalies through logs and dashboards  
-7. Measure inference latency and throughput  
-8. Compare baseline and optimized inference paths  
-
-This project is designed as preparation for work involving:
-
-- edge AI systems  
-- streaming data pipelines  
-- telemetry processing  
-- embedded ML deployment  
-
----
-
-# System Architecture
+# Project Structure
 
 ```text
-Telemetry Generator
-        ↓
-Kafka Producer
-        ↓
-Kafka Topic
-        ↓
-Consumer / Preprocessing Service
-        ↓
-Feature Windowing
-        ↓
-Anomaly Detection Model
-        ↓
-Alerts / Logs / Dashboard
-        ↓
-Benchmarking & Optimization
-
 flightedge/
 │
 ├── README.md
-├── docker-compose.yml
 ├── requirements.txt
-│
-├── producer/
-│   ├── telemetry_generator.py
-│   ├── schema.py
-│   └── producer.py
-│
-├── consumer/
-│   ├── consumer.py
-│   ├── preprocess.py
-│   ├── feature_windows.py
-│   └── alerts.py
 │
 ├── model/
 │   ├── train.py
@@ -114,14 +21,14 @@ flightedge/
 │   ├── quantize.py
 │   └── artifacts/
 │
-├── dashboard/
-│   ├── app.py
-│   └── components/
-│
 ├── benchmarks/
 │   ├── benchmark_fp32.py
 │   ├── benchmark_quantized.py
 │   └── results/
+│
+├── dashboard/
+│   ├── app.py
+│   └── components/
 │
 ├── data/
 │   ├── synthetic_runs/
@@ -130,66 +37,174 @@ flightedge/
 └── docs/
     ├── architecture.md
     ├── telemetry_schema.md
-    └── roadmap.md
-
+    ├── roadmap.md
+    └── plans/
+```
 
 ---
 
-# Telemetry Generator Examples
+# Kafka/Docker Progress Log
 
-Generate normal telemetry (no anomalies):
+## Done So Far
 
-```bash
-python3 producer/telemetry_generator.py \
-  --rows 240 \
-  --seed 42 \
-  --anomaly none \
-  --format csv \
-  --output data/synthetic_runs/telemetry_normal.csv
-```
+1. Created [`docker-compose.yml`](/Users/revant/FlightEdge/docker-compose.yml) with a single Kafka service:
+   - image: `apache/kafka:latest`
+   - container name: `kafka`
+   - port mapping: `9092:9092`
+   - KRaft-related environment variables configured
 
-Generate a reproducible temp spike run:
+2. Started Kafka container:
 
 ```bash
-python3 producer/telemetry_generator.py \
-  --rows 240 \
-  --seed 42 \
-  --anomaly temp_spike \
-  --anomaly-probability 1.0 \
-  --format jsonl \
-  --output data/synthetic_runs/telemetry_temp_spike.jsonl
+docker compose up -d
 ```
 
-Generate altitude drop anomalies during climb/cruise:
+3. Verified running containers:
 
 ```bash
-python3 producer/telemetry_generator.py \
-  --rows 240 \
-  --seed 42 \
-  --anomaly altitude_drop \
-  --anomaly-probability 1.0 \
-  --format csv \
-  --output data/synthetic_runs/telemetry_altitude_drop.csv
+docker ps
 ```
+
+4. Created topic `flightdata`:
+
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --topic flightdata \
+  --partitions 1 \
+  --replication-factor 1
+```
+
+5. Verified topic exists:
+
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+6. Ran manual Kafka messaging test successfully:
+   - started console producer on topic `flightdata`
+   - started console consumer on topic `flightdata` with `--from-beginning`
+   - sent test messages and confirmed they were received
+
+## Next Step
+
+Begin Phase 2 follow-up work: route consumed telemetry into persistence and/or downstream processing.
+
+## Next Work Item (Before/After Push)
+
+Build on the validated stream:
+- add consumer-side persistence target (file/DB) for replayable records
+- connect consumer output to feature windows and anomaly pipeline
+
 
 Notes:
-- Set `--anomaly-probability 0.0` for fully normal runs even when anomaly type is set.
-- Same `--seed` + same args produces identical anomaly timing and shape.
+1. Ill allow codex to decide this
+2. We will use kafka topic name flightedge, and port number 9092 for our consumer and producer
+3.flight_id is fine so each flight stays ordered in a partition
+
+4.yeah we can add a publish mode path. 
+clarification: is this adding an argument for argparse? 
+
+## Phase 2 Milestone Validation (March 23, 2026)
+
+- Milestone status: Complete for core realtime pipeline objective.
+- Topic and broker used: `flightedge` on `localhost:9092`.
+- Keying strategy: `flight_id` used as Kafka message key to preserve per-flight ordering.
+
+Validated commands:
+
+```bash
+python consumer/consumer.py \
+  --kafka-bootstrap-servers localhost:9092 \
+  --kafka-topic flightedge
+```
+
+```bash
+python producer/telemetry_generator.py \
+  --mode kafka \
+  --kafka-bootstrap-servers localhost:9092 \
+  --kafka-topic flightedge \
+  --flight-id FLIGHT-001 \
+  --rows 240 \
+  --event-interval-ms 200 \
+  --max-events 20
+```
+
+Validation result:
+- Produced `20` events and consumed `20` events end-to-end in realtime.
+
+Current limitation (expected for this milestone):
+- Consumer is terminal-print only; persistence and downstream processing are not yet implemented.
 
 ---
 
-# Anomaly Validation Checks
+# Kafka Realtime Runbook (`flightedge`)
 
-Run the built-in validation suite:
+## 1) Start Kafka
 
 ```bash
-python3 producer/validate_anomalies.py --rows 240 --seed 42
+docker compose up -d
 ```
 
-This checks:
-- temp spike shape (sharp increase with decay)
-- altitude drop behavior (unexpected descent in climb/cruise)
-- realism bounds for all key sensors
-- anomaly metadata contract (`is_anomaly`, `anomaly_type`)
-- anomaly probability frequency behavior
+## 2) Create topic (safe if already exists)
 
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic flightedge \
+  --partitions 1 \
+  --replication-factor 1
+```
+
+## 3) Verify topic list
+
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+## 4) Install Python dependency
+
+```bash
+pip install -r requirements.txt
+```
+
+## 5) Start consumer (terminal 1)
+
+```bash
+python consumer/consumer.py \
+  --kafka-bootstrap-servers localhost:9092 \
+  --kafka-topic flightedge
+```
+
+## 6) Stream producer (terminal 2)
+
+```bash
+python producer/telemetry_generator.py \
+  --mode kafka \
+  --kafka-bootstrap-servers localhost:9092 \
+  --kafka-topic flightedge \
+  --flight-id FLIGHT-001 \
+  --rows 240 \
+  --event-interval-ms 200 \
+  --max-events 20
+```
+
+## Optional: stream and write file at the same time
+
+```bash
+python producer/telemetry_generator.py \
+  --mode both \
+  --kafka-bootstrap-servers localhost:9092 \
+  --kafka-topic flightedge \
+  --flight-id FLIGHT-001 \
+  --max-events 50 \
+  --output data/synthetic_runs/telemetry_phase2.csv \
+  --format csv
+```

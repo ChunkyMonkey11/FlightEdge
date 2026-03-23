@@ -1,9 +1,14 @@
 {
   "event_name": "flight_telemetry",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Synthetic aircraft telemetry event emitted by FlightEdge generator",
 
   "fields": [
+    {
+      "name": "plane_id",
+      "type": "string",
+      "description": "Unique aircraft identifier used for message keys and traceability"
+    },
     {
       "name": "timestamp_s",
       "type": "float",
