@@ -1,13 +1,10 @@
 services:
   kafka:
     image: apache/kafka:latest
-    # Use the latest kafka image from Docker Hub
     container_name: kafka
     ports:
       - "9092:9092"
-      #exposes kafka to my machine on port 9029
     environment:
-    # Set the necessary environment variables for Kafka configuration
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093

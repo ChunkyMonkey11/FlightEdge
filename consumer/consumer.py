@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Kafka CLI consumer for inspecting live FlightEdge telemetry events."""
 
 import argparse
 import json

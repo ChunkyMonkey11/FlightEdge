@@ -1,181 +1,71 @@
 # FlightEdge
 
-FlightEdge is an edge-ML sandbox for telemetry anomaly detection workflows.
+FlightEdge is a telemetry-to-anomaly-detection sandbox for realtime edge ML workflows.
 
-The repository currently focuses on model experimentation, inference benchmarking, and dashboard work.
+## Current Status (March 23, 2026)
 
----
+The Kafka telemetry stream is already operational on:
 
-# Project Structure
+- Topic: `flightedge`
+- Broker: `localhost:9092`
+- Message key: `flight_id` (preserves per-flight ordering)
+
+## Next Milestone: Phase 3 (Active)
+
+Phase 3 focuses on transforming raw telemetry streams into model-ready features.
+
+### Objective
+
+Build a preprocessing and feature extraction layer that converts live telemetry
+data into rolling-window statistics and derived signals for anomaly detection.
+
+### Scope
+
+1. Build a preprocessing pipeline for incoming telemetry events.
+2. Implement rolling windows over time-series telemetry.
+3. Compute derived features (moving averages, rates of change, variance, z-scores).
+4. Normalize or scale features where appropriate.
+5. Ensure the feature pipeline runs continuously in realtime.
+6. Validate model input vectors.
+7. Document feature definitions and processing decisions.
+
+### Deliverables
+
+1. `consumer/preprocess.py` for raw telemetry transformation.
+2. `consumer/feature_windows.py` for rolling feature computation.
+3. Validated, model-ready feature vectors.
+4. Documentation for feature definitions and flow.
+
+## Repository Layout
 
 ```text
-flightedge/
-│
-├── README.md
-├── requirements.txt
-│
-├── model/
-│   ├── train.py
-│   ├── infer.py
-│   ├── export_onnx.py
-│   ├── quantize.py
-│   └── artifacts/
-│
-├── benchmarks/
-│   ├── benchmark_fp32.py
-│   ├── benchmark_quantized.py
-│   └── results/
-│
-├── dashboard/
-│   ├── app.py
-│   └── components/
-│
-├── data/
-│   ├── synthetic_runs/
-│   └── telemetry_schema.json
-│
-└── docs/
-    ├── architecture.md
-    ├── telemetry_schema.md
-    ├── roadmap.md
-    └── plans/
+FlightEdge/
+├── producer/       # Telemetry generation and Kafka publishing
+├── consumer/       # Kafka consumption + upcoming feature pipeline
+├── data/           # Schema and generated telemetry samples
+├── model/          # Model training/inference/export placeholders
+├── benchmarks/     # Benchmark placeholders
+├── dashboard/      # UI placeholder
+├── docs/           # Lightweight architecture and roadmap notes
+├── docker-compose.yml
+└── requirements.txt
 ```
 
----
+## Quick Start (Realtime Stream)
 
-# Kafka/Docker Progress Log
-
-## Done So Far
-
-1. Created [`docker-compose.yml`](/Users/revant/FlightEdge/docker-compose.yml) with a single Kafka service:
-   - image: `apache/kafka:latest`
-   - container name: `kafka`
-   - port mapping: `9092:9092`
-   - KRaft-related environment variables configured
-
-2. Started Kafka container:
+1. Start Kafka:
 
 ```bash
 docker compose up -d
 ```
 
-3. Verified running containers:
-
-```bash
-docker ps
-```
-
-4. Created topic `flightdata`:
-
-```bash
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --create \
-  --topic flightdata \
-  --partitions 1 \
-  --replication-factor 1
-```
-
-5. Verified topic exists:
-
-```bash
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --list
-```
-
-6. Ran manual Kafka messaging test successfully:
-   - started console producer on topic `flightdata`
-   - started console consumer on topic `flightdata` with `--from-beginning`
-   - sent test messages and confirmed they were received
-
-## Next Step
-
-Begin Phase 2 follow-up work: route consumed telemetry into persistence and/or downstream processing.
-
-## Next Work Item (Before/After Push)
-
-Build on the validated stream:
-- add consumer-side persistence target (file/DB) for replayable records
-- connect consumer output to feature windows and anomaly pipeline
-
-
-Notes:
-1. Ill allow codex to decide this
-2. We will use kafka topic name flightedge, and port number 9092 for our consumer and producer
-3.flight_id is fine so each flight stays ordered in a partition
-
-4.yeah we can add a publish mode path. 
-clarification: is this adding an argument for argparse? 
-
-## Phase 2 Milestone Validation (March 23, 2026)
-
-- Milestone status: Complete for core realtime pipeline objective.
-- Topic and broker used: `flightedge` on `localhost:9092`.
-- Keying strategy: `flight_id` used as Kafka message key to preserve per-flight ordering.
-
-Validated commands:
-
-```bash
-python consumer/consumer.py \
-  --kafka-bootstrap-servers localhost:9092 \
-  --kafka-topic flightedge
-```
-
-```bash
-python producer/telemetry_generator.py \
-  --mode kafka \
-  --kafka-bootstrap-servers localhost:9092 \
-  --kafka-topic flightedge \
-  --flight-id FLIGHT-001 \
-  --rows 240 \
-  --event-interval-ms 200 \
-  --max-events 20
-```
-
-Validation result:
-- Produced `20` events and consumed `20` events end-to-end in realtime.
-
-Current limitation (expected for this milestone):
-- Consumer is terminal-print only; persistence and downstream processing are not yet implemented.
-
----
-
-# Kafka Realtime Runbook (`flightedge`)
-
-## 1) Start Kafka
-
-```bash
-docker compose up -d
-```
-
-## 2) Create topic (safe if already exists)
-
-```bash
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --create \
-  --if-not-exists \
-  --topic flightedge \
-  --partitions 1 \
-  --replication-factor 1
-```
-
-## 3) Verify topic list
-
-```bash
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --list
-```
-
-## 4) Install Python dependency
+2. Install Python dependency:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 5) Start consumer (terminal 1)
+3. Start consumer:
 
 ```bash
 python consumer/consumer.py \
@@ -183,7 +73,7 @@ python consumer/consumer.py \
   --kafka-topic flightedge
 ```
 
-## 6) Stream producer (terminal 2)
+4. Stream telemetry:
 
 ```bash
 python producer/telemetry_generator.py \
@@ -194,17 +84,4 @@ python producer/telemetry_generator.py \
   --rows 240 \
   --event-interval-ms 200 \
   --max-events 20
-```
-
-## Optional: stream and write file at the same time
-
-```bash
-python producer/telemetry_generator.py \
-  --mode both \
-  --kafka-bootstrap-servers localhost:9092 \
-  --kafka-topic flightedge \
-  --flight-id FLIGHT-001 \
-  --max-events 50 \
-  --output data/synthetic_runs/telemetry_phase2.csv \
-  --format csv
 ```
