@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Kafka producer wrapper used by telemetry generators and stream publishers."""
 
 import json
 import sys

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Synthetic flight telemetry generator with optional realtime Kafka publishing."""
 
 import argparse
 import csv
